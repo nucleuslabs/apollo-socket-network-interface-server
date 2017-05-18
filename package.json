@@ -1,6 +1,6 @@
 {
   "name": "apollo-socket-network-interface-server",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "scripts": {
     "prepublishOnly": "make"
   },
@@ -30,7 +30,7 @@
     "babel-register": "^6.24.1"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://registry.npmjs.com"
   },
   "author": "NucleusLabs Information Technologies Inc."
 }
