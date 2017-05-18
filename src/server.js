@@ -6,6 +6,7 @@ import {runQuery} from 'graphql-server-core';
 import Msgpack from 'msgpack-lite';
 import queryLogger from './query-logger';
 import FileSystem from 'fs';
+import {readUInt64BE, writeUInt64BE} from './buffer';
 
 export default function createServer(options) {
     const SOCK_FILE = options.path || '/tmp/apollo.sock';
