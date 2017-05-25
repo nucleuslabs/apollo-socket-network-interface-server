@@ -6,7 +6,7 @@ import {runQuery} from 'graphql-server-core';
 import Msgpack from 'msgpack-lite';
 import queryLogger from './query-logger';
 import FileSystem from 'fs';
-import {readUInt64BE, writeUInt64BE} from './buffer';
+import processData from './processData';
 
 export default function createServer(options) {
     const SOCK_FILE = options.path || '/tmp/apollo.sock';
@@ -27,65 +27,30 @@ export default function createServer(options) {
         });
 
 
-        let buffer, queryId, length, offset;
+        c.on('data', processData((queryId,msgBuf) => {
+            // console.log(msgBuf,msgBuf.length);
+            
+            let req = Msgpack.decode(msgBuf);
+            let ql = queryLogger();
 
-        c.on('data', packet => {
-            // log("Start",queryId,packet.length);
-            if(!queryId) {  // new message
-                // log("Part 1",queryId,offset);
-                if(packet.length < 16) {
-                    throw new Error(`Packet is too small; missing header?`);
-                }
+            // log('RUNNING QUERY',queryId);
 
-                queryId = packet::readUInt64BE(0);
-                length = packet::readUInt64BE(8);
-                // log("Packed Length",length);
-                offset = 0;
-                buffer = Buffer.allocUnsafe(length);
-                packet.copy(buffer, offset, 16);
-                offset += packet.length - 16;
-            } else {
-                // log("Part X",queryId,offset,length,buffer.length,packet.length,packet.slice(0,16));
-                packet.copy(buffer, offset);
-                offset += packet.length;
-            }
-            if(offset >= length) {
-                // log("Packet Length",queryId,packet.length);
-                // log("Buffer Length",queryId,buffer.length);
-                let req;
-                try {
-                    req = Msgpack.decode(buffer);
-                } catch(err) {
-                    console.error(`${Chalk.red('msgpack decode error:')} ${err.message}`);
-                    // TODO: send error response -- we have the queryId
-                    return;
-                }
-                // log("req",req, buffer);
-                // log('Received',data);
-                let ql = queryLogger();
+            runQuery({...req, schema: SCHEMA}).then(result => {
+                ql(Chalk.magenta('socket'), req.query);
+                // log("Result",result);
+                let resMsg = Msgpack.encode(result);
+                let resData = Buffer.allocUnsafe(resMsg.length + 12);
 
-                // log('RUNNING QUERY',queryId);
-
-                runQuery({...req, schema: SCHEMA}).then((queryId => result => {
-                    ql(Chalk.magenta('socket'), req.query);
-                    // log("Result",result);
-                    let resMsg = Msgpack.encode(result);
-                    let resData = Buffer.allocUnsafe(resMsg.length + 16);
-                    resData::writeUInt64BE(queryId, 0);
-                    resData::writeUInt64BE(resMsg.length, 8);
-                    resMsg.copy(resData, 16);
-                    // log("almost write",resData.length);
-                    // log('FIN QUERY',queryId);
-                    let flushed = c.write(resData);
-                    // log("flushed",flushed);
-                })(queryId));
-
-                queryId = null;
-                length = null;
-                offset = null;
-                buffer = null; // TODO: fill with remainder of packet
-            }
-        })
+                resData.writeUIntBE(queryId, 0, 6);
+                resData.writeUIntBE(resMsg.length, 6, 6);
+                
+                resMsg.copy(resData, 12);
+                // log("almost write",resData.length);
+                // log('FIN QUERY',queryId);
+                let flushed = c.write(resData);
+                // log("flushed",flushed);
+            });
+        }));
     });
 
     sockServer.on('error', serverError => {
